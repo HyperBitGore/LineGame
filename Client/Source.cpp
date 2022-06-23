@@ -7,7 +7,6 @@
 //game win and lose state
 
 
-
 int main() {
 	bool exitf = false;
 	srand(time(NULL));
@@ -25,11 +24,6 @@ int main() {
 	Uint32 cur32col = Gore::Engine::ConvertColorToUint32RGBA(curcolor, surf->format);
 	Uint32 enemy32col = Gore::Engine::ConvertColorToUint32RGBA(enemycol, surf->format);
 
-	for (int i = 0; i < 100; i++) {
-		for (int j = 0; j < 100; j++) {
-			Gore::Engine::SetPixelSurface(surf, &i, &j, &cur32col);
-		}
-	}
 	SDL_Rect screct = { 0, 0, surf->w, surf->h };
 	const Uint8* keys;
 	keys = SDL_GetKeyboardState(NULL);
@@ -53,7 +47,10 @@ int main() {
 		return -1;
 	}
 	connect(&sock);
-	char rec_buf[1024];
+	TIMEVAL timeout;
+	timeout.tv_sec = 0;
+	timeout.tv_usec = 150;
+	std::thread recvT(recvThread, sock);
 	while (!exitf) {
 		while (SDL_PollEvent(&e)) {
 			switch (e.type) {
@@ -63,6 +60,9 @@ int main() {
 			}
 		}
 		double delta = dt.getDelta();
+		int fps = 1 / delta;
+		std::string fp = "Line Game - FPS: " + std::to_string(fps);
+		SDL_SetWindowTitle(wind, fp.c_str());
 		qtimer += delta;
 		SDL_SetRenderDrawColor(rend, 0, 0, 0, 0);
 		SDL_RenderClear(rend);
@@ -81,39 +81,46 @@ int main() {
 
 		int mx, my;
 		if (SDL_GetMouseState(&mx, &my) & SDL_BUTTON(SDL_BUTTON_LEFT)) {
-			Gore::Engine::SetPixelSurface(surf, my, mx, dc);
-			//sending change spot to server
-			char mt[13];
-			mt[0] = CHANGE;
-			char* mtp = mt;
-			mtp++;
-			char* t = mtp;
-			int* tp = (int*)t;
-			*tp = mx;
-			tp++;
-			*tp = my;
-			tp++;
-			UINT32* tpt = (UINT32*)tp;
-			*tpt = dc;
-			//send packet over tcp socket
-			send(sock, mt, 13, 0);
-			//recv(sock, mt, )
+			//checking if mouse point within bounds
+			if (mx >= 0 && my >= 0 && mx <= 799 && my <= 799) {
+				Gore::Engine::SetPixelSurface(surf, my, mx, dc);
+				//sending change spot to server
+				char mt[13];
+				mt[0] = CHANGE;
+				char* mtp = mt;
+				mtp++;
+				char* t = mtp;
+				int* tp = (int*)t;
+				*tp = mx;
+				tp++;
+				*tp = my;
+				tp++;
+				UINT32* tpt = (UINT32*)tp;
+				*tpt = dc;
+				//send packet over tcp socket
+				send(sock, mt, 13, 0);
+			}
 		}
 		SDL_GetMouseState(&mx, &my);
-		if (Gore::Engine::GetPixelSurface(surf, &my, &mx) != 0 && Gore::Engine::GetPixelSurface(surf, &my, &mx) != cur32col) {
+		//if (Gore::Engine::GetPixelSurface(surf, &my, &mx) != 0 && Gore::Engine::GetPixelSurface(surf, &my, &mx) != cur32col) {
 			//Gore::Engine::clearSurface(surf);
-		}
-		std::cout << Gore::Engine::GetPixelSurface(surf, &mx, &my) << "\n";
+		//}
 		SDL_Texture* sctex = SDL_CreateTextureFromSurface(rend, surf);
 		SDL_RenderCopy(rend, sctex, NULL, &screct);
 		SDL_RenderPresent(rend);
 		SDL_DestroyTexture(sctex);
+		for (int i = 0; i < changes.size();) {
+			Gore::Engine::SetPixelSurface(surf, changes[i].y, changes[i].x, changes[i].col);
+			changes.erase(changes.begin() + i);
+		}
 	}
 	//shutsdown winsock
 	char mto[1];
 	mto[0] = DISCONNECT;
 	send(sock, mto, 1, 0);
 	closesocket(sock);
+	recvT.join();
+	recvT.~thread();
 	WSACleanup();
 	return 0;
 }

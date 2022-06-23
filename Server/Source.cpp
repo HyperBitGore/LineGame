@@ -6,11 +6,9 @@
 
 #pragma comment (lib, "ws2_32.lib")
 
-//std::vector<SOCKET> socks;
 fd_set master;
-std::mutex mt1;
 
-enum { CHANGE, WIN, LOSE, REST, DISCONNECT };
+enum { CHANGE = 25, WIN, LOSE, REST, DISCONNECT };
 
 //used to be easily serilized and sent to user
 struct Point {
@@ -31,7 +29,10 @@ void generateMap(int w, int h) {
 	}
 }
 Point* findPoint(int x, int y) {
-	return &map[y][x];
+	if (x >= 0 && y >= 0) {
+		return &map[y][x];
+	}
+	return nullptr;
 }
 
 //https://stackoverflow.com/questions/69328638/error-invalid-padding-length-on-received-packet-when-connecting-to-winsock-ser
@@ -73,7 +74,6 @@ int main() {
 	timeout.tv_sec = 5;
 	timeout.tv_usec = 0;
 	while(!exitf){
-		mt1.lock();
 		fd_set copy = master;
 		int socketCount = select(0, &copy, nullptr, nullptr, nullptr);
 		for (int i = 0; i < socketCount; i++) {
@@ -102,12 +102,11 @@ int main() {
 					std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;
 				}
 				//put server connect send changes event here
-				//socks.push_back(clientSocket);
-				send(clientSocket, "Welcome to server\n", 19, 0);
+				//send(clientSocket, "Welcome to server\n", 19, 0);
 				FD_SET(clientSocket, &master);
 			}
 			else {
-				int bytesIn = recv(sock, buf, 1024, 0);
+				int bytesIn = recv(sock, buf, 13, 0);
 				if (bytesIn <= 0) {
 					std::cerr << "Disconnect" << std::endl;
 					closesocket(sock);
@@ -135,36 +134,31 @@ int main() {
 						pt++;
 						ppo = (UINT32*)pt;
 						p = findPoint(ptx, pty);
-						p->col = *ppo;
-						char buff[13];
-						buff[0] = CHANGE;
-						tt = buff;
-						tt++;
-						pt = (int*)tt;
-						*pt = ptx;
-						pt++;
-						*pt = pty;
-						pt++;
-						ppo = (UINT32*)pt;
-						*ppo = p->col;
-						for (int j = 0; j < master.fd_count; j++) {
-							send(master.fd_array[j], buff, 13, 0);
-						}
-						std::cout << "Sent change \n";
-						break;
-					default:
-						/*for (int j = 0; j < master.fd_count; j++) {
-							if (master.fd_array[j] != sock) {
-								send(master.fd_array[j], buf, bytesIn, 0);
+						if (p != nullptr) {
+							p->col = *ppo;
+							char buff[13];
+							buff[0] = CHANGE;
+							tt = buff;
+							tt++;
+							pt = (int*)tt;
+							*pt = ptx;
+							pt++;
+							*pt = pty;
+							pt++;
+							ppo = (UINT32*)pt;
+							*ppo = p->col;
+							for (int j = 0; j < master.fd_count; j++) {
+								if (master.fd_array[j] != sock) {
+									send(master.fd_array[j], buff, 13, 0);
+								}
 							}
+							std::cout << "Sent change \n";
 						}
-						std::cout << "wrote buffer \n";*/
 						break;
 					}
 				}
 			}
 		}
-		mt1.unlock();
 
 	}
 	//cleanup sockets
