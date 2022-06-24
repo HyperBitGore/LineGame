@@ -3,8 +3,38 @@
 
 //all connections use TCP
 
-//recieve changes from server(need seperate thread??)
+//change movement to be a line that tracks towards mouse
 //game win and lose state
+
+
+
+void updatePlayer(lineMaker* player, double* delta, SOCKET sock, SDL_Surface* surf, UINT32 dc) {
+	player->mvtime += *delta;
+	if (player->mvtime > 0.01) {
+		player->x += player->trajx;
+		player->y += player->trajy;
+		player->mvtime = 0;
+		if (player->x >= 0 && player->y >= 0 && player->x <= 799 && player->y <= 799) {
+			Gore::Engine::SetPixelSurface(surf, (int)player->y, (int)player->x, dc);
+			//sending change spot to server
+			char mt[16];
+			ZeroMemory(mt, 16);
+			mt[0] = CHANGE;
+			char* mtp = mt;
+			mtp++;
+			char* t = mtp;
+			int* tp = (int*)t;
+			*tp = (int)player->x;
+			tp++;
+			*tp = (int)player->y;
+			tp++;
+			UINT32* tpt = (UINT32*)tp;
+			*tpt = dc;
+			//send packet over tcp socket
+			send(sock, mt, 16, 0);
+		}
+	}
+}
 
 
 int main() {
@@ -46,11 +76,14 @@ int main() {
 		std::cerr << "Failed to create socket ERR: " << WSAGetLastError() << std::endl;
 		return -1;
 	}
-	connect(&sock);
+	bool mode = true;
+	std::string name;
+	connectSocket(&sock, &mode, &dc, name, surf);
 	TIMEVAL timeout;
 	timeout.tv_sec = 0;
 	timeout.tv_usec = 150;
 	std::thread recvT(recvThread, sock);
+	lineMaker player = { 300, 300, 0, 0, 0 };
 	while (!exitf) {
 		while (SDL_PollEvent(&e)) {
 			switch (e.type) {
@@ -80,37 +113,24 @@ int main() {
 		}
 
 		int mx, my;
-		if (SDL_GetMouseState(&mx, &my) & SDL_BUTTON(SDL_BUTTON_LEFT)) {
-			//checking if mouse point within bounds
-			if (mx >= 0 && my >= 0 && mx <= 799 && my <= 799) {
-				Gore::Engine::SetPixelSurface(surf, my, mx, dc);
-				//sending change spot to server
-				char mt[13];
-				mt[0] = CHANGE;
-				char* mtp = mt;
-				mtp++;
-				char* t = mtp;
-				int* tp = (int*)t;
-				*tp = mx;
-				tp++;
-				*tp = my;
-				tp++;
-				UINT32* tpt = (UINT32*)tp;
-				*tpt = dc;
-				//send packet over tcp socket
-				send(sock, mt, 13, 0);
-			}
-		}
 		SDL_GetMouseState(&mx, &my);
-		//if (Gore::Engine::GetPixelSurface(surf, &my, &mx) != 0 && Gore::Engine::GetPixelSurface(surf, &my, &mx) != cur32col) {
-			//Gore::Engine::clearSurface(surf);
-		//}
+		if (mode) {
+			calcSlope((int)player.x, (int)player.y, mx, my, &player.trajx, &player.trajy);
+			player.trajx = -player.trajx;
+			player.trajy = -player.trajy;
+			updatePlayer(&player, &delta, sock, surf, dc);
+		}
 		SDL_Texture* sctex = SDL_CreateTextureFromSurface(rend, surf);
 		SDL_RenderCopy(rend, sctex, NULL, &screct);
 		SDL_RenderPresent(rend);
 		SDL_DestroyTexture(sctex);
 		for (int i = 0; i < changes.size();) {
-			Gore::Engine::SetPixelSurface(surf, changes[i].y, changes[i].x, changes[i].col);
+			if (changes[i].col == 0) {
+				mode = false;
+			}
+			else {
+				Gore::Engine::SetPixelSurface(surf, changes[i].y, changes[i].x, changes[i].col);
+			}
 			changes.erase(changes.begin() + i);
 		}
 	}

@@ -8,15 +8,29 @@
 
 fd_set master;
 
-enum { CHANGE = 25, WIN, LOSE, REST, DISCONNECT };
+enum { CHANGE = 25, WIN, LOSE, REST, DISCONNECT, DEATH };
 
 //used to be easily serilized and sent to user
 struct Point {
 	int x;
 	int y;
-	uint32_t col;
+	UINT32 col;
 };
+
+struct Player {
+	SOCKET sock;
+	UINT32 col;
+	std::string name;
+	bool dead;
+};
+struct RGBCol {
+	uint8_t r;
+	uint8_t g;
+	uint8_t b;
+};
+
 std::vector<std::vector<Point>> map;
+std::vector<Player> players;
 void generateMap(int w, int h) {
 	map.clear();
 	for (int i = 0; i < h; i++) {
@@ -35,10 +49,43 @@ Point* findPoint(int x, int y) {
 	return nullptr;
 }
 
+void sendChanges(SOCKET soc) {
+	char buf[4096];
+	size_t cb = 4095;
+	/*for (int i = 0; i < changes.size();) {
+		ZeroMemory(buf, 4096);
+		buf[0] = CHANGE;
+		char* tp = buf;
+		tp++;
+		int* tt = (int*)tp;
+		while (cb >= 12) {
+			*tt = changes[i]->x;
+			tt++;
+			*tt = changes[i]->y;
+			tt++;
+			UINT32* ttp = (UINT32*)tt;
+			*ttp = changes[i]->col;
+			ttp++;
+			tt = (int*)ttp;
+			i++;
+			cb -= 12;
+			tp += 12;
+		}
+		send(soc, buf, 4096, 0);
+	}*/
+	ZeroMemory(buf, 4096);
+	buf[0] = REST;
+	send(soc, buf, 4096, 0);
+}
+
+RGBCol getRandomColor() {
+	return { uint8_t(rand() % 255 + 10), uint8_t(rand() % 255 + 50), uint8_t(rand() % 255 + 50) };
+}
+
+
 //https://stackoverflow.com/questions/69328638/error-invalid-padding-length-on-received-packet-when-connecting-to-winsock-ser
 
 
-//Send all current changes to user who connects
 //implement win and lose state
 
 
@@ -46,12 +93,14 @@ int main() {
 	bool exitf = false;
 	WSADATA wsdat;
 	WORD ver = MAKEWORD(2, 2);
+	srand(time(NULL));
 	//start winsock
 	int wsOK = WSAStartup(ver, &wsdat);
 	if (wsOK != 0) {
 		std::cerr << "Can't init winsock!" << std::endl;
 		return -1;
 	}
+	players.reserve(100);
 	generateMap(800, 800);
 	FD_ZERO(&master);
 	SOCKET listener = socket(AF_INET, SOCK_STREAM, 0);
@@ -67,9 +116,9 @@ int main() {
 	//tells winsock that the socket is for listening
 	listen(listener, SOMAXCONN);
 	FD_SET(listener, &master);
+	bool playing = true;
 
-
-	char buf[1024];
+	char buf[16];
 	TIMEVAL timeout;
 	timeout.tv_sec = 5;
 	timeout.tv_usec = 0;
@@ -77,7 +126,7 @@ int main() {
 		fd_set copy = master;
 		int socketCount = select(0, &copy, nullptr, nullptr, nullptr);
 		for (int i = 0; i < socketCount; i++) {
-			ZeroMemory(buf, 1024);
+			ZeroMemory(buf, 16);
 			SOCKET sock = copy.fd_array[i];
 			if (sock == listener) {
 				sockaddr_in client;
@@ -101,14 +150,46 @@ int main() {
 					inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
 					std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;
 				}
-				//put server connect send changes event here
-				//send(clientSocket, "Welcome to server\n", 19, 0);
+				//sendChanges(clientSocket);
+				//put server connect send state of game here, so if game going on or not
+				Player p;
+				p.sock = clientSocket;
+				buf[0] = playing;
+				char* tp = buf;
+				tp++;
+				RGBCol col = getRandomColor();
+				uint8_t* tto = (uint8_t*)tp;
+				*tto = col.r;
+				tto++;
+				*tto = col.g;
+				tto++;
+				*tto = col.b;
+				//need random spawn position to be sent here
+				send(clientSocket, buf, 16, 0);
+				//recieve col
+				ZeroMemory(buf, 16);
+				recv(clientSocket, buf, 16, 0);
+				UINT32* pp = (UINT32*)buf;
+				p.col = *pp;
+				//need getting of name here
+				ZeroMemory(buf, 16);
+				recv(clientSocket, buf, 16, 0);
+				p.name = buf;
+				p.dead = false;
+				players.push_back(p);
+				std::cout << p.name << " : " << p.col << std::endl;
 				FD_SET(clientSocket, &master);
 			}
 			else {
-				int bytesIn = recv(sock, buf, 13, 0);
+				int bytesIn = recv(sock, buf, 16, 0);
 				if (bytesIn <= 0) {
 					std::cerr << "Disconnect" << std::endl;
+					for (int j = 0; j < players.size(); j++) {
+						if (players[j].sock == sock) {
+							players.erase(players.begin() + j);
+							j = players.size();
+						}
+					}
 					closesocket(sock);
 					FD_CLR(sock, &master);
 				}
@@ -121,6 +202,12 @@ int main() {
 					switch (buf[0]) {
 					case DISCONNECT:
 						std::cout << "Disconnect" << std::endl;
+						for (int j = 0; j < players.size(); j++) {
+							if (players[j].sock == sock) {
+								players.erase(players.begin() + j);
+								j = players.size();
+							}
+						}
 						closesocket(sock);
 						FD_CLR(sock, &master);
 						break;
@@ -135,8 +222,16 @@ int main() {
 						ppo = (UINT32*)pt;
 						p = findPoint(ptx, pty);
 						if (p != nullptr) {
+							for (auto& j : players) {
+								if (j.sock == sock) {
+									if (j.col != p->col && p->col != 0) {
+										j.dead = true;
+									}
+								}
+							}
 							p->col = *ppo;
-							char buff[13];
+							char buff[16];
+							ZeroMemory(buff, 16);
 							buff[0] = CHANGE;
 							tt = buff;
 							tt++;
@@ -149,7 +244,7 @@ int main() {
 							*ppo = p->col;
 							for (int j = 0; j < master.fd_count; j++) {
 								if (master.fd_array[j] != sock) {
-									send(master.fd_array[j], buff, 13, 0);
+									send(master.fd_array[j], buff, 16, 0);
 								}
 							}
 							std::cout << "Sent change \n";
@@ -159,7 +254,17 @@ int main() {
 				}
 			}
 		}
-
+		for (auto& i : players) {
+			if (i.dead) {
+				ZeroMemory(buf, 16);
+				char* ttp = buf;
+				buf[0] = DEATH;
+				ttp++;
+				bool* tt = (bool*)ttp;
+				*tt = i.dead;
+				send(i.sock, buf, 16, 0);
+			}
+		}
 	}
 	//cleanup sockets
 	fd_set cpyo = master;
