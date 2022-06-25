@@ -110,7 +110,7 @@ void recvThread(SOCKET soc1) {
 				py = *tpf;
 				tpf++;
 				tpu = (UINT32*)tpf;
-				std::cout << "recv change\n";
+				//std::cout << "recv change\n";
 				changes.push_back({ px, py, *tpu, false });
 				//Gore::Engine::SetPixelSurface(surf, px, py, *tpu);
 				break;

@@ -274,7 +274,7 @@ int main() {
 									send(master.fd_array[j], buff, 16, 0);
 								}
 							}
-							std::cout << "Sent change \n";
+							//std::cout << "Sent change \n";
 						}
 						break;
 					}
@@ -313,6 +313,7 @@ int main() {
 				send(i.sock, last.c_str(), 16, 0);
 			}
 			clearMap();
+			std::cout << "Sent win message\n";
 		}
 	}
 	//cleanup sockets
