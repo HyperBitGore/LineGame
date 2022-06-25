@@ -15,6 +15,7 @@ struct Change {
 	int x;
 	int y;
 	UINT32 col;
+	bool lose;
 };
 
 struct lineMaker {
@@ -23,13 +24,14 @@ struct lineMaker {
 	float trajx;
 	float trajy;
 	float mvtime;
+	float sx;
+	float sy;
 };
-
 
 std::mutex mt1;
 std::vector<Change> changes;
 //135.148.45.140
-void connectSocket(SOCKET* sock, bool* mode, UINT32* col, std::string& outname, SDL_Surface* surf) {
+void connectSocket(SOCKET* sock, bool* mode, UINT32* col, std::string& outname, SDL_Surface* surf, lineMaker* player) {
 	std::string ip;
 	std::cout << "Input server IP: \n";
 	std::cin >> ip;
@@ -62,6 +64,11 @@ void connectSocket(SOCKET* sock, bool* mode, UINT32* col, std::string& outname, 
 	rg.g = *unp;
 	unp++;
 	rg.b = *unp;
+	unp++;
+	int* toop = (int*)unp;
+	player->x = *toop;
+	toop++;
+	player->y = *toop;
 	UINT32 otc = Gore::Engine::ConvertColorToUint32RGBA(rg, surf->format);
 	//sending converted color back
 	ZeroMemory(buf, 16);
@@ -72,6 +79,8 @@ void connectSocket(SOCKET* sock, bool* mode, UINT32* col, std::string& outname, 
 	//sending name
 	send(*sock, name.c_str(), 16, 0);
 	outname = name;
+	player->sx = player->x;
+	player->sy = player->y;
 }
 
 
@@ -102,17 +111,21 @@ void recvThread(SOCKET soc1) {
 				tpf++;
 				tpu = (UINT32*)tpf;
 				std::cout << "recv change\n";
-				changes.push_back({ px, py, *tpu });
+				changes.push_back({ px, py, *tpu, false });
 				//Gore::Engine::SetPixelSurface(surf, px, py, *tpu);
 				break;
-			case REST:
-
+			case WIN:
+				//display the name winning
+				ZeroMemory(buf, 16);
+				recv(copy.fd_array[0], buf, 16, 0);
+				changes.push_back({ 0, 0, 0, true });
+				std::cout << buf << " won!" << std::endl;
 				break;
 			case DEATH:
 				tf = buf;
 				tf++;
 				ttp = (bool*)tf;
-				changes.push_back({ 0, 0, 0 });
+				changes.push_back({ 0, 0, 0, false });
 				break;
 			}
 		}

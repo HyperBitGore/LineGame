@@ -78,12 +78,12 @@ int main() {
 	}
 	bool mode = true;
 	std::string name;
-	connectSocket(&sock, &mode, &dc, name, surf);
+	lineMaker player = { 300, 300, 0, 0, 0 };
+	connectSocket(&sock, &mode, &dc, name, surf, &player);
 	TIMEVAL timeout;
 	timeout.tv_sec = 0;
 	timeout.tv_usec = 150;
 	std::thread recvT(recvThread, sock);
-	lineMaker player = { 300, 300, 0, 0, 0 };
 	while (!exitf) {
 		while (SDL_PollEvent(&e)) {
 			switch (e.type) {
@@ -126,7 +126,15 @@ int main() {
 		SDL_DestroyTexture(sctex);
 		for (int i = 0; i < changes.size();) {
 			if (changes[i].col == 0) {
-				mode = false;
+				if (changes[i].lose) {
+					Gore::Engine::clearSurface(surf);
+					mode = true;
+					player.x = player.sx;
+					player.y = player.sy;
+				}
+				else {
+					mode = false;
+				}
 			}
 			else {
 				Gore::Engine::SetPixelSurface(surf, changes[i].y, changes[i].x, changes[i].col);

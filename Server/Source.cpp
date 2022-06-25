@@ -42,6 +42,14 @@ void generateMap(int w, int h) {
 		map.push_back(level);
 	}
 }
+void clearMap() {
+	for (int i = 0; i < map.size(); i++) {
+		for (auto& j : map[i]) {
+			j.col = 0;
+		}
+	}
+}
+
 Point* findPoint(int x, int y) {
 	if (x >= 0 && y >= 0) {
 		return &map[y][x];
@@ -80,6 +88,20 @@ void sendChanges(SOCKET soc) {
 
 RGBCol getRandomColor() {
 	return { uint8_t(rand() % 255 + 10), uint8_t(rand() % 255 + 50), uint8_t(rand() % 255 + 50) };
+}
+Point getRandomPoint() {
+	Point p;
+	bool q = false;
+	while (!q) {
+		p.x = rand() % 750 + 1;
+		p.y = rand() % 750 + 1;
+		Point* pp = findPoint(p.x, p.y);
+		if (pp->col == 0) {
+			q = true;
+		}
+	}
+	p.col = 0;
+	return p;
 }
 
 
@@ -164,7 +186,12 @@ int main() {
 				*tto = col.g;
 				tto++;
 				*tto = col.b;
-				//need random spawn position to be sent here
+				tto++;
+				int* toop = (int*)tto;
+				Point ppot = getRandomPoint();
+				*toop = ppot.x;
+				toop++;
+				*toop = ppot.y;
 				send(clientSocket, buf, 16, 0);
 				//recieve col
 				ZeroMemory(buf, 16);
@@ -224,7 +251,7 @@ int main() {
 						if (p != nullptr) {
 							for (auto& j : players) {
 								if (j.sock == sock) {
-									if (j.col != p->col && p->col != 0) {
+									if (j.col != p->col && p->col != 0 || ptx == 0 || pty == 0 || ptx == 798 || pty == 798) {
 										j.dead = true;
 									}
 								}
@@ -254,8 +281,11 @@ int main() {
 				}
 			}
 		}
+		size_t n_dead = 0;
+		std::string last;
 		for (auto& i : players) {
 			if (i.dead) {
+				n_dead++;
 				ZeroMemory(buf, 16);
 				char* ttp = buf;
 				buf[0] = DEATH;
@@ -264,6 +294,25 @@ int main() {
 				*tt = i.dead;
 				send(i.sock, buf, 16, 0);
 			}
+			else {
+				last = i.name;
+			}
+		}
+		if (n_dead >= players.size() - 1) {
+			//send reset to players / win to players
+			ZeroMemory(buf, 16);
+			char* tt = buf;
+			*tt = WIN;
+			tt++;
+			for (auto& i : players) {
+				i.dead = false;
+				send(i.sock, buf, 16, 0);
+			}
+			//send player name
+			for (auto& i : players) {
+				send(i.sock, last.c_str(), 16, 0);
+			}
+			clearMap();
 		}
 	}
 	//cleanup sockets
